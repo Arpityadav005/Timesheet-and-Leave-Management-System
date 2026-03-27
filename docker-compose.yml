@@ -115,9 +115,8 @@ services:
       - tms-network
 
   eureka-server:
-    build:
-      context: .
-      dockerfile: EurekaServer/Dockerfile
+    image: arpityadav005/tms-eureka-server:latest
+    platform: linux/amd64
     container_name: tms-eureka-server
     restart: unless-stopped
     ports:
@@ -134,9 +133,8 @@ services:
       - tms-network
 
   config-server:
-    build:
-      context: .
-      dockerfile: Config-Server/Dockerfile
+    image: arpityadav005/tms-config-server:latest
+    platform: linux/amd64
     container_name: tms-config-server
     restart: unless-stopped
     depends_on:
@@ -160,9 +158,8 @@ services:
       - tms-network
 
   auth-service:
-    build:
-      context: .
-      dockerfile: auth-service/Dockerfile
+    image: arpityadav005/tms-auth-service:latest
+    platform: linux/amd64
     container_name: tms-auth-service
     restart: unless-stopped
     depends_on:
@@ -189,9 +186,8 @@ services:
       - tms-network
 
   timesheet-service:
-    build:
-      context: .
-      dockerfile: timesheet-service/Dockerfile
+    image: arpityadav005/tms-timesheet-service:latest
+    platform: linux/amd64
     container_name: tms-timesheet-service
     restart: unless-stopped
     depends_on:
@@ -224,9 +220,8 @@ services:
       - tms-network
 
   leave-service:
-    build:
-      context: .
-      dockerfile: leave-service/Dockerfile
+    image: arpityadav005/tms-leave-service:latest
+    platform: linux/amd64
     container_name: tms-leave-service
     restart: unless-stopped
     depends_on:
@@ -259,9 +254,8 @@ services:
       - tms-network
 
   admin-service:
-    build:
-      context: .
-      dockerfile: admin-service/Dockerfile
+    image: arpityadav005/tms-admin-service:latest
+    platform: linux/amd64
     container_name: tms-admin-service
     restart: unless-stopped
     depends_on:
@@ -294,9 +288,8 @@ services:
       - tms-network
 
   api-gateway:
-    build:
-      context: .
-      dockerfile: api-gateway/Dockerfile
+    image: arpityadav005/tms-api-gateway:latest
+    platform: linux/amd64
     container_name: tms-api-gateway
     restart: unless-stopped
     depends_on:
