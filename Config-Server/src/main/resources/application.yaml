@@ -1,0 +1,36 @@
+server:
+  port: 7777
+
+spring:
+  application:
+    name: config-server
+  profiles:
+    active: git
+  security:
+    user:
+      name: config-admin
+      password: config@123
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_REPO_URI}
+          default-label: main
+          username: ${CONFIG_REPO_USERNAME}
+          password: ${CONFIG_REPO_TOKEN}
+          clone-on-start: true
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"

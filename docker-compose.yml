@@ -1,0 +1,340 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: tms-rabbitmq
+    hostname: tms-rabbitmq
+    restart: "no"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      tms-network:
+        aliases:
+          - rabbitmq
+          - tms-rabbitmq
+
+  sonarqube-db:
+    image: postgres:16
+    container_name: tms-sonarqube-db
+    restart: "no"
+    environment:
+      POSTGRES_DB: sonarqube
+      POSTGRES_USER: sonarqube
+      POSTGRES_PASSWORD: sonarqube
+    volumes:
+      - sonarqube_db_data:/var/lib/postgresql/data
+    networks:
+      - tms-network
+
+  sonarqube:
+    image: sonarqube:community
+    container_name: tms-sonarqube
+    restart: "no"
+    depends_on:
+      sonarqube-db:
+        condition: service_started
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonarqube
+      SONAR_JDBC_PASSWORD: sonarqube
+      SONAR_WEB_JAVAOPTS: -Xms128m -Xmx128m
+      SONAR_CE_JAVAOPTS: -Xms128m -Xmx128m
+      SONAR_SEARCH_JAVAOPTS: -Xms128m -Xmx128m -XX:MaxDirectMemorySize=32m -Dnode.store.allow_mmap=false
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    networks:
+      - tms-network
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: tms-loki
+    restart: "no"
+    command: -config.file=/etc/loki/config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - tms-network
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: tms-promtail
+    restart: "no"
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      loki:
+        condition: service_started
+    volumes:
+      - ./observability/promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - tms-network
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: tms-grafana
+    restart: "no"
+    depends_on:
+      loki:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    networks:
+      - tms-network
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: tms-zipkin
+    restart: "no"
+    ports:
+      - "9411:9411"
+    networks:
+      - tms-network
+
+  eureka-server:
+    build:
+      context: .
+      dockerfile: EurekaServer/Dockerfile
+    container_name: tms-eureka-server
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    networks:
+      - tms-network
+
+  config-server:
+    build:
+      context: .
+      dockerfile: Config-Server/Dockerfile
+    container_name: tms-config-server
+    restart: unless-stopped
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+      CONFIG_REPO_URI: ${CONFIG_REPO_URI}
+      CONFIG_REPO_USERNAME: ${CONFIG_REPO_USERNAME:-}
+      CONFIG_REPO_TOKEN: ${CONFIG_REPO_TOKEN:-}
+      EUREKA_URL: http://eureka-server:8761/eureka/
+    ports:
+      - "7777:7777"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --user=config-admin --password=config@123 -O- http://localhost:7777/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 50s
+    networks:
+      - tms-network
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: tms-auth-service
+    restart: unless-stopped
+    depends_on:
+      zipkin:
+        condition: service_started
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+      SERVER_PORT: 8081
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-admin:config%40123@config-server:7777
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:${MYSQL_PORT:-3306}/${AUTH_DB_NAME:-auth_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-tms}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-tms}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+    ports:
+      - "8081:8081"
+    networks:
+      - tms-network
+
+  timesheet-service:
+    build:
+      context: .
+      dockerfile: timesheet-service/Dockerfile
+    container_name: tms-timesheet-service
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_started
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+      SERVER_PORT: 8082
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-admin:config%40123@config-server:7777
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:${MYSQL_PORT:-3306}/${TIMESHEET_DB_NAME:-timesheet_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-tms}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-tms}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SPRING_RABBITMQ_HOST: tms-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+    ports:
+      - "8082:8082"
+    networks:
+      - tms-network
+
+  leave-service:
+    build:
+      context: .
+      dockerfile: leave-service/Dockerfile
+    container_name: tms-leave-service
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_started
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+      SERVER_PORT: 8083
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-admin:config%40123@config-server:7777
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:${MYSQL_PORT:-3306}/${LEAVE_DB_NAME:-leave_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-tms}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-tms}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SPRING_RABBITMQ_HOST: tms-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+    ports:
+      - "8083:8083"
+    networks:
+      - tms-network
+
+  admin-service:
+    build:
+      context: .
+      dockerfile: admin-service/Dockerfile
+    container_name: tms-admin-service
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      zipkin:
+        condition: service_started
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+      SERVER_PORT: 8084
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-admin:config%40123@config-server:7777
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      SPRING_DATASOURCE_URL: jdbc:mysql://host.docker.internal:${MYSQL_PORT:-3306}/${ADMIN_DB_NAME:-admin_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-tms}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-tms}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      SPRING_RABBITMQ_HOST: tms-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+    ports:
+      - "8084:8084"
+    networks:
+      - tms-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: tms-api-gateway
+    restart: unless-stopped
+    depends_on:
+      zipkin:
+        condition: service_started
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      timesheet-service:
+        condition: service_started
+      leave-service:
+        condition: service_started
+      admin-service:
+        condition: service_started
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseSerialGC
+      SERVER_PORT: 8080
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-admin:config%40123@config-server:7777
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+    ports:
+      - "8080:8080"
+    networks:
+      - tms-network
+
+networks:
+  tms-network:
+    driver: bridge
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  sonarqube_db_data:
+  loki_data:
+  grafana_data:
