@@ -3,6 +3,7 @@ services:
     image: rabbitmq:3.13-management
     container_name: tms-rabbitmq
     hostname: tms-rabbitmq
+    profiles: ["app"]
     restart: "no"
     ports:
       - "5672:5672"
@@ -21,6 +22,7 @@ services:
   sonarqube-db:
     image: postgres:16
     container_name: tms-sonarqube-db
+    profiles: ["quality"]
     restart: "no"
     environment:
       POSTGRES_DB: sonarqube
@@ -34,6 +36,7 @@ services:
   sonarqube:
     image: sonarqube:community
     container_name: tms-sonarqube
+    profiles: ["quality"]
     restart: "no"
     depends_on:
       sonarqube-db:
@@ -61,6 +64,7 @@ services:
   loki:
     image: grafana/loki:3.1.1
     container_name: tms-loki
+    profiles: ["app"]
     restart: "no"
     command: -config.file=/etc/loki/config.yaml
     ports:
@@ -74,6 +78,7 @@ services:
   promtail:
     image: grafana/promtail:3.1.1
     container_name: tms-promtail
+    profiles: ["app"]
     restart: "no"
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
@@ -88,6 +93,7 @@ services:
   grafana:
     image: grafana/grafana:11.1.4
     container_name: tms-grafana
+    profiles: ["app"]
     restart: "no"
     depends_on:
       loki:
@@ -108,6 +114,7 @@ services:
   zipkin:
     image: openzipkin/zipkin:3
     container_name: tms-zipkin
+    profiles: ["app"]
     restart: "no"
     ports:
       - "9411:9411"
@@ -118,6 +125,7 @@ services:
     image: arpityadav005/tms-eureka-server:latest
     platform: linux/amd64
     container_name: tms-eureka-server
+    profiles: ["app"]
     restart: unless-stopped
     ports:
       - "8761:8761"
@@ -136,6 +144,7 @@ services:
     image: arpityadav005/tms-config-server:latest
     platform: linux/amd64
     container_name: tms-config-server
+    profiles: ["app"]
     restart: unless-stopped
     depends_on:
       eureka-server:
@@ -161,6 +170,7 @@ services:
     image: arpityadav005/tms-auth-service:latest
     platform: linux/amd64
     container_name: tms-auth-service
+    profiles: ["app"]
     restart: unless-stopped
     depends_on:
       zipkin:
@@ -191,6 +201,7 @@ services:
     image: arpityadav005/tms-timesheet-service:latest
     platform: linux/amd64
     container_name: tms-timesheet-service
+    profiles: ["app"]
     restart: unless-stopped
     depends_on:
       rabbitmq:
@@ -227,6 +238,7 @@ services:
     image: arpityadav005/tms-leave-service:latest
     platform: linux/amd64
     container_name: tms-leave-service
+    profiles: ["app"]
     restart: unless-stopped
     depends_on:
       rabbitmq:
@@ -263,6 +275,7 @@ services:
     image: arpityadav005/tms-admin-service:latest
     platform: linux/amd64
     container_name: tms-admin-service
+    profiles: ["app"]
     restart: unless-stopped
     depends_on:
       rabbitmq:
@@ -299,6 +312,7 @@ services:
     image: arpityadav005/tms-api-gateway:latest
     platform: linux/amd64
     container_name: tms-api-gateway
+    profiles: ["app"]
     restart: unless-stopped
     depends_on:
       zipkin:
