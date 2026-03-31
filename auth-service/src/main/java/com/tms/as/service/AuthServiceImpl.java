@@ -30,15 +30,18 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final IdGeneratorUtil idGeneratorUtil;
+    private final WelcomeEmailService welcomeEmailService;
 
     public AuthServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
                            JwtUtil jwtUtil,
-                           IdGeneratorUtil idGeneratorUtil) {
+                           IdGeneratorUtil idGeneratorUtil,
+                           WelcomeEmailService welcomeEmailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.idGeneratorUtil = idGeneratorUtil;
+        this.welcomeEmailService = welcomeEmailService;
     }
 
     @Override
@@ -66,6 +69,7 @@ public class AuthServiceImpl implements AuthService {
 
         User savedUser = userRepository.save(user);
         log.info("User registered successfully userId={} employeeCode={}", savedUser.getId(), savedUser.getEmployeeCode());
+        welcomeEmailService.sendWelcomeEmail(savedUser);
 
         return mapToUserResponse(savedUser);
     }

@@ -3,6 +3,17 @@ spring:
     name: auth-service
   config:
     import: ${CONFIG_SERVER_IMPORT:optional:configserver:http://config-admin:config%40123@localhost:7777}
+  mail:
+    host: ${SPRING_MAIL_HOST:}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE:true}
   cache:
     type: caffeine
     caffeine:
@@ -28,6 +39,9 @@ app:
   jwt:
     secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
     expiration-ms: 86400000
+  mail:
+    from: ${APP_MAIL_FROM:${SPRING_MAIL_USERNAME:no-reply@tms.local}}
+    welcome-subject: ${APP_MAIL_WELCOME_SUBJECT:Welcome to TimeSheet and Leave Management System}
 
 logging:
   level:
