@@ -10,11 +10,6 @@ spring:
           uri: lb://auth-service
           predicates:
             - Path=/api/v1/auth/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: auth-service
-                fallbackUri: forward:/fallback/auth
         - id: timesheet-service
           uri: lb://timesheet-service
           predicates:
