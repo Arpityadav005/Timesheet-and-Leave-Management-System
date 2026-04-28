@@ -5,6 +5,8 @@ spring:
     import: ${CONFIG_SERVER_IMPORT:optional:configserver:http://config-admin:config%40123@localhost:7777}
   cloud:
     gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
       routes:
         - id: auth-service
           uri: lb://auth-service
@@ -40,7 +42,10 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            allowed-origins: "*"
+            allowed-origins:
+              - http://localhost:5173
+              - http://127.0.0.1:5173
+              - http://localhost:8080
             allowed-methods:
               - GET
               - POST
@@ -49,7 +54,7 @@ spring:
               - PATCH
               - OPTIONS
             allowed-headers: "*"
-            allow-credentials: false
+            allow-credentials: true
 
 server:
   port: 8080
