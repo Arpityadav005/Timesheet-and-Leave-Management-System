@@ -16,20 +16,10 @@ spring:
           uri: lb://timesheet-service
           predicates:
             - Path=/api/v1/timesheets/**,/api/v1/projects/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: timesheet-service
-                fallbackUri: forward:/fallback/timesheet
         - id: leave-service
           uri: lb://leave-service
           predicates:
             - Path=/api/v1/leave/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: leave-service
-                fallbackUri: forward:/fallback/leave
         - id: admin-service
           uri: lb://admin-service
           predicates:
