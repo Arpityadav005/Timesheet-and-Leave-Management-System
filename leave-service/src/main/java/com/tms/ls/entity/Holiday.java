@@ -26,6 +26,11 @@ public class Holiday {
     @Column(name = "holiday_year", nullable = false)
     private Integer year;
 
+    // Some older schemas (or manual DB changes) use a `year` column instead of `holiday_year`.
+    // To stay compatible, we populate both.
+    @Column(name = "year", nullable = false)
+    private Integer legacyYear;
+
     @Column(name = "active", nullable = false)
     private boolean active = true;
 
@@ -36,7 +41,16 @@ public class Holiday {
         this.name = name;
         this.type = type;
         this.year = date.getYear();
+        this.legacyYear = date.getYear();
         this.active = true;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        if (date != null) {
+            if (year == null) year = date.getYear();
+            if (legacyYear == null) legacyYear = date.getYear();
+        }
     }
 
     public String getId() { return id; }
@@ -53,6 +67,9 @@ public class Holiday {
 
     public Integer getYear() { return year; }
     public void setYear(Integer year) { this.year = year; }
+
+    public Integer getLegacyYear() { return legacyYear; }
+    public void setLegacyYear(Integer legacyYear) { this.legacyYear = legacyYear; }
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }

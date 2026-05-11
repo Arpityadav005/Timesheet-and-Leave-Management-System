@@ -77,23 +77,27 @@ public class LeaveServiceImpl implements LeaveService {
     @Transactional
     public void initializeBalances(String employeeId) {
         log.info("Initializing leave balances for employeeId={}", employeeId);
-        List<LeaveBalance> existing = balanceRepository.findByEmployeeId(employeeId);
-        if (existing.isEmpty()) {
-            List<LeavePolicy> activePolicies = leavePolicyRepository.findByActiveTrue();
-            if (activePolicies.isEmpty()) {
-                log.warn("Leave balance initialization failed for employeeId={} because no active policies were found", employeeId);
-                throw new IllegalArgumentException("No active leave policies found to initialize balances");
-            }
-
-            activePolicies.forEach(policy ->
-                    balanceRepository.save(new LeaveBalance(
-                            employeeId,
-                            policy.getLeaveType(),
-                            policy.getDaysAllowed()
-                    ))
-            );
-            log.info("Leave balances initialized for employeeId={} using {} active policies", employeeId, activePolicies.size());
+        // Upsert balances based on active leave policies.
+        // If an employee already has some balances, but new policies were added later,
+        // we still create the missing balance rows.
+        List<LeavePolicy> activePolicies = leavePolicyRepository.findByActiveTrue();
+        if (activePolicies.isEmpty()) {
+            log.warn("Leave balance initialization failed for employeeId={} because no active policies were found", employeeId);
+            throw new IllegalArgumentException("No active leave policies found to initialize balances");
         }
+
+        int created = 0;
+        for (LeavePolicy policy : activePolicies) {
+            boolean exists = balanceRepository
+                    .findByEmployeeIdAndLeaveType(employeeId, policy.getLeaveType())
+                    .isPresent();
+            if (!exists) {
+                balanceRepository.save(new LeaveBalance(employeeId, policy.getLeaveType(), policy.getDaysAllowed()));
+                created++;
+            }
+        }
+
+        log.info("Leave balances initialization completed for employeeId={} created={} policies={}", employeeId, created, activePolicies.size());
     }
 
     @Override
@@ -125,8 +129,23 @@ public class LeaveServiceImpl implements LeaveService {
             throw new IllegalArgumentException("Requested period does not contain any working days");
         }
 
+        // If balance is missing for the leave type, create it from an active policy (if available).
+        // This prevents "Leave balance not found" when policies are created after an employee already exists.
         LeaveBalance balance = balanceRepository.findByEmployeeIdAndLeaveType(employeeId, requestDto.getLeaveType())
-                .orElseThrow(() -> new IllegalArgumentException("Leave balance not found for type: " + requestDto.getLeaveType()));
+                .orElseGet(() -> {
+                    if (requestDto.getLeaveType() == LeaveType.UNPAID) {
+                        return balanceRepository.save(new LeaveBalance(employeeId, LeaveType.UNPAID, BigDecimal.ZERO));
+                    }
+
+                    LeavePolicy policy = leavePolicyRepository.findByLeaveType(requestDto.getLeaveType())
+                            .orElseThrow(() -> new IllegalArgumentException("No leave policy found for type: " + requestDto.getLeaveType()));
+                    if (!policy.isActive()) {
+                        throw new IllegalArgumentException("Leave policy is not active for type: " + requestDto.getLeaveType());
+                    }
+
+                    log.info("Auto-creating missing leave balance for employeeId={} leaveType={} daysAllowed={}", employeeId, policy.getLeaveType(), policy.getDaysAllowed());
+                    return balanceRepository.save(new LeaveBalance(employeeId, policy.getLeaveType(), policy.getDaysAllowed()));
+                });
 
         BigDecimal available = calculateAvailableBalance(balance);
         

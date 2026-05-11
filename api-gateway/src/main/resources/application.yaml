@@ -7,6 +7,9 @@ spring:
     gateway:
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+        - RemoveRequestHeader=Origin
+        - RemoveRequestHeader=Access-Control-Request-Method
+        - RemoveRequestHeader=Access-Control-Request-Headers
       routes:
         - id: auth-service
           uri: lb://auth-service
@@ -30,6 +33,7 @@ spring:
                 name: admin-service
                 fallbackUri: forward:/fallback/admin
       globalcors:
+        add-to-simple-url-handler-mapping: true
         cors-configurations:
           '[/**]':
             allowed-origins:

@@ -21,6 +21,8 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class AuthServiceImpl implements AuthService {
 
@@ -198,6 +200,14 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    public List<UserResponse> getAllUsers() {
+        log.info("Loading all users for admin view");
+        return userRepository.findAll().stream()
+                .map(this::mapToUserResponse)
+                .toList();
+    }
+
+    @Override
     public UserResponse assignManager(String id, String managerId) {
         log.info("Assigning managerId={} to userId={}", managerId, id);
 
@@ -231,6 +241,33 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findById(employeeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
         return user.getManagerId();
+    }
+
+    @Override
+    public UserResponse getManagerDetails(String employeeId, String loggedInEmail) {
+        log.info("Fetching manager details for employeeId={} requestedBy={}", employeeId, loggedInEmail);
+
+        User loggedInUser = userRepository.findByEmail(loggedInEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!loggedInUser.getId().equals(employeeId) && loggedInUser.getRole() != Role.ADMIN) {
+            log.warn("Manager details access denied for requester={} targetEmployeeId={}", loggedInEmail, employeeId);
+            throw new UnauthorizedException("You can only view manager details for your own profile");
+        }
+
+        User employee = userRepository.findById(employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
+
+        String managerId = employee.getManagerId();
+        if (managerId == null || managerId.isBlank()) {
+            // Not an error: simply means no manager assigned yet.
+            return null;
+        }
+
+        User manager = userRepository.findById(managerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Manager not found"));
+
+        return mapToUserResponse(manager);
     }
 
     private UserResponse mapToUserResponse(User user) {

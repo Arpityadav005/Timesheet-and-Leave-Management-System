@@ -20,6 +20,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/auth")
 @Tag(name = "Auth", description = "Authentication endpoints")
@@ -72,6 +74,14 @@ public class AuthController {
         return ResponseEntity.ok(authService.adminUpdateUser(id, request));
     }
 
+    @GetMapping("/admin/users")
+    @Operation(summary = "Get all users", security = @SecurityRequirement(name = "bearerAuth"))
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<UserResponse>> getAllUsers() {
+        log.info("Fetching all users for admin view");
+        return ResponseEntity.ok(authService.getAllUsers());
+    }
+
     @PutMapping("/admin/users/{id}/manager")
     @Operation(summary = "Assign manager to a user", security = @SecurityRequirement(name = "bearerAuth"))
     @PreAuthorize("hasRole('ADMIN')")
@@ -88,4 +98,22 @@ public class AuthController {
         log.info("Fetching manager for employeeId={}", employeeId);
         return ResponseEntity.ok(authService.getManagerForEmployee(employeeId));
     }
+
+    @GetMapping("/users/{employeeId}/manager/details")
+    @Operation(summary = "Get manager details for employee",
+            description = "Returns manager name and email for the given employee (self or admin).",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<UserResponse> getManagerDetails(
+            @PathVariable String employeeId,
+            Authentication authentication) {
+        log.info("Fetching manager details for employeeId={} requestedBy={}", employeeId, authentication.getName());
+        return ResponseEntity.ok(authService.getManagerDetails(employeeId, authentication.getName()));
+    }
+    
+    @GetMapping("/greeting")
+    public String Greet(){
+    	return "Hello";
+    }
+    
+    
 }
